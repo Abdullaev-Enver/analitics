@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Аналитика посещений</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-white text-gray-900 p-6"> <!-- Изменил bg-gray-100 на bg-white -->
+
+  <div class="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-6">
+    <!-- Левая панель: форма -->
+    <div class="col-span-1 bg-white rounded-2xl shadow p-6">
+      <h2 class="text-xl font-bold mb-4">Параметры запроса</h2>
+      <form id="form" class="space-y-4">
+        <div>
+          <label class="block mb-1 font-medium">Домен:</label>
+          <input id="domain" type="text" placeholder="example.ru" class="w-full border rounded px-3 py-2" required>
+        </div>
+        <div>
+          <label class="block mb-1 font-medium">Дата от:</label>
+          <input id="dateFrom" type="date" class="w-full border rounded px-3 py-2" required>
+        </div>
+        <div>
+          <label class="block mb-1 font-medium">Дата до:</label>
+          <input id="dateTo" type="date" class="w-full border rounded px-3 py-2">
+        </div>
+        <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 transition">Показать статистику</button>
+      </form>
+    </div>
+
+    <!-- Правая панель: статистика и график -->
+    <div class="col-span-1 md:col-span-3 space-y-6">
+      <!-- Блок общей статистики -->
+      <div class="bg-white rounded-2xl shadow p-6">
+        <h2 class="text-xl font-bold mb-2">Общее количество посещений</h2>
+        <div id="totalVisits" class="text-4xl font-semibold text-blue-600">—</div>
+      </div>
+      
+      <!-- График -->
+      <div class="bg-white rounded-2xl shadow p-6">
+        <canvas id="chart" class="w-full h-64"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const domain = document.getElementById("domain").value.trim();
+      const dateFrom = document.getElementById("dateFrom").value;
+      const dateTo = document.getElementById("dateTo").value;
+      if (!domain || !dateFrom) return alert("Пожалуйста, введите домен и дату начала.");
+
+      const url = `https://counter.megagroup.ru/api/stat/?command=hits&domain=${domain}&date_from=${dateFrom}` +
+                  (dateTo ? `&date_to=${dateTo}` : '') + `&_debug=1&period=month`;
+
+      try {
+        const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
+        const response = await fetch(proxyUrl);
+        const raw = await response.text();
+
+        let data;
+        try {
+          data = JSON.parse(raw);
+        } catch (e) {
+          const match = raw.match(/<pre.*?>([\s\S]*?)<\/pre>/i);
+          if (!match) throw new Error("Ответ не содержит JSON.");
+          data = JSON.parse(match[1]);
+        }
+
+        // Сортируем даты по возрастанию (от старых к новым)
+        const sortedDates = Object.keys(data).sort((a, b) => new Date(a) - new Date(b));
+        
+        const labels = [];
+        const visits = [];
+        let total = 0;
+
+        for (const date of sortedDates) {
+          const value = data[date];
+          if (!Array.isArray(value) || value.length === 0) continue;
+          labels.push(date);
+          const v = value[0].visits;
+          visits.push(v);
+          total += v;
+        }
+
+        document.getElementById("totalVisits").textContent = total.toLocaleString();
+
+        const ctx = document.getElementById("chart").getContext("2d");
+        if (window.visitChart) window.visitChart.destroy();
+        window.visitChart = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [{
+              label: 'Посещения (visits)',
+              data: visits,
+              borderColor: '#3B82F6',
+              backgroundColor: 'rgba(59, 130, 246, 0.1)',
+              fill: true,
+              tension: 0.3
+            }]
+          },
+          options: {
+            responsive: true,
+            scales: {
+              x: {
+                reverse: false // Убедимся, что ось X не перевернута
+              }
+            },
+            plugins: {
+              legend: { display: true },
+              title: {
+                display: true,
+                text: `Посещения по месяцам для ${domain}`
+              }
+            }
+          }
+        });
+
+      } catch (err) {
+        alert("Ошибка: " + err.message);
+        console.error(err);
+      }
+    });
+  </script>
+</body>
+</html>
